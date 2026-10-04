@@ -1,0 +1,145 @@
+name: Windows-Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: pwsh
+
+env:
+  # Default cargo target dir; no --target flag is passed to tauri.
+  NSIS_DIR: src-tauri/target/release/bundle/nsis
+
+jobs:
+  build:
+    name: Windows x64 NSIS installer
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      # Headroom for git and tooling. transcribe-cpp-sys handles MAX_PATH itself
+      # (it builds through a short junction), so no CARGO_TARGET_DIR is needed.
+      - name: Enable long paths
+        run: |
+          New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force | Out-Null
+          git config --system core.longpaths true
+
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          # Change the key suffix to drop a stale cache.
+          key: windows-x64-v1
+          cache-bin: false
+          cache-on-failure: true
+
+      # ggml-vulkan (built by transcribe-cpp-sys) needs the Vulkan headers,
+      # loader and glslc.
+      - name: Install Vulkan SDK
+        uses: humbletim/install-vulkan-sdk@v1.2
+        with:
+          version: 1.4.309.0
+          cache: true
+
+      # Link Microsoft's baseline ONNX Runtime dynamically. The default static
+      # build (pyke) is compiled with /arch:AVX2 and crashes at startup on
+      # pre-Haswell CPUs. build.rs bundles onnxruntime.dll from ORT_LIB_LOCATION.
+      - name: Install ONNX Runtime
+        run: |
+          $ver = "1.24.2"
+          $url = "https://github.com/microsoft/onnxruntime/releases/download/v$ver/onnxruntime-win-x64-$ver.zip"
+          $zip = Join-Path $env:RUNNER_TEMP "ort.zip"
+          $dest = Join-Path $env:RUNNER_TEMP "ort"
+          $ProgressPreference = "SilentlyContinue"
+          Invoke-WebRequest -Uri $url -OutFile $zip -MaximumRetryCount 3 -RetryIntervalSec 5
+          Expand-Archive -Path $zip -DestinationPath $dest -Force
+          $lib = (Resolve-Path "$dest/onnxruntime-win-x64-$ver/lib").Path
+          Write-Host "ORT_LIB_LOCATION=$lib"
+          Add-Content -Path $env:GITHUB_ENV -Value "ORT_LIB_LOCATION=$lib"
+          Add-Content -Path $env:GITHUB_ENV -Value "ORT_PREFER_DYNAMIC_LINK=1"
+
+      # ggml-vulkan runs find_package(SPIRV-Headers CONFIG), which the Vulkan SDK
+      # install does not provide. vcpkg supplies the header-only package; its
+      # prefix on CMAKE_PREFIX_PATH is enough (no vcpkg toolchain file needed).
+      - name: Install SPIRV-Headers
+        run: |
+          vcpkg install spirv-headers:x64-windows
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg install spirv-headers failed" }
+          $prefix = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows" -replace '\\', '/'
+          $combined = if ($env:CMAKE_PREFIX_PATH) { "$prefix;$env:CMAKE_PREFIX_PATH" } else { $prefix }
+          Write-Host "CMAKE_PREFIX_PATH=$combined"
+          Add-Content -Path $env:GITHUB_ENV -Value "CMAKE_PREFIX_PATH=$combined"
+
+      # build.rs copies the VC++ runtime DLLs from HANDY_VC_REDIST_DIRS into the
+      # installer so the app starts on machines without a current redistributable.
+      # Staging is silently skipped when the variable is unset.
+      - name: Locate VC++ runtime redistributable
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsRoot = & $vswhere -latest -products * -property installationPath
+          if (-not $vsRoot) { throw "vswhere found no Visual Studio installation" }
+          $versionFile = Join-Path $vsRoot "VC\Auxiliary\Build\Microsoft.VCRedistVersion.default.txt"
+          $redistVersion = (Get-Content $versionFile).Trim()
+          $redist = Join-Path $vsRoot "VC\Redist\MSVC\$redistVersion\x64"
+          if (-not (Test-Path $redist)) { throw "VC++ redist dir not found: $redist" }
+          # Folder names carry the toolset generation (e.g. Microsoft.VC143.CRT).
+          $crt = Get-ChildItem $redist -Directory -Filter "Microsoft.VC*.CRT" | Sort-Object Name | Select-Object -Last 1
+          $omp = Get-ChildItem $redist -Directory -Filter "Microsoft.VC*.OpenMP" | Sort-Object Name | Select-Object -Last 1
+          if (-not $crt) { throw "VC++ CRT redist folder not found under $redist" }
+          foreach ($dll in "msvcp140.dll", "vcruntime140.dll") {
+            if (-not (Test-Path (Join-Path $crt.FullName $dll))) { throw "$dll not found in $($crt.FullName)" }
+          }
+          $dirs = @($crt.FullName)
+          if ($omp) { $dirs += $omp.FullName } else { Write-Host "::warning::VC++ OpenMP redist not found, vcomp140.dll will not be bundled" }
+          $value = $dirs -join ";"
+          Write-Host "HANDY_VC_REDIST_DIRS=$value"
+          Add-Content -Path $env:GITHUB_ENV -Value "HANDY_VC_REDIST_DIRS=$value"
+
+      # Unsigned build: tauri.conf.json has no signing or updater config.
+      - name: Build NSIS installer
+        run: bun run tauri build --bundles nsis
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: Diktier-App-windows-x64
+          path: ${{ env.NSIS_DIR }}/*.exe
+          retention-days: 14
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Job summary
+        run: |
+          $installers = @(Get-ChildItem $env:NSIS_DIR -Filter "*.exe")
+          if ($installers.Count -eq 0) { throw "No installer found in $env:NSIS_DIR" }
+          $lines = @("### Windows x64 installer", "", "| File | Size |", "| --- | --- |")
+          foreach ($f in $installers) {
+            $mb = ($f.Length / 1MB).ToString("F2", [cultureinfo]::InvariantCulture)
+            Write-Host "$($f.Name): $mb MB"
+            $lines += ('| `{0}` | {1} MB |' -f $f.Name, $mb)
+          }
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $lines

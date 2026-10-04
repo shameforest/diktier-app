@@ -2,6 +2,15 @@
 
 This file provides guidance to AI coding assistants working with code in this repository.
 
+## Diktier-App fork rules
+
+This repository is **Diktier-App**, a Windows-only fork of [Handy](https://github.com/cjpais/Handy) (MIT). These rules override anything below:
+
+- **No AI post-processing, ever.** Transcript text may only be changed by the speech-recognition model itself or by deterministic rules (`process_transcription_output` in `src-tauri/src/actions.rs` is the single hook). No LLM clients, API keys or prompts.
+- **Offline by design.** No auto-updater, no telemetry. Network access is only allowed for explicit, user-triggered model downloads.
+- **Local Windows build** (no Visual Studio needed): `..\werkzeuge\build.ps1 -Mode check|release|debug|bundle` from the project folder. It uses a portable MSVC toolchain, `CARGO_TARGET_DIR=C:\dev\build\diktier-app` (C:\dev is excluded from Norton real-time scanning on the dev PC, which otherwise holds freshly built tools such as `vulkan-shaders-gen.exe`), ONNX Runtime 1.24.2 via `ORT_LIB_LOCATION`, and blocks the `transcribe-cpp-sys` junction (CMake+Ninja fails through junctions on the dev PC).
+- CI: `.github/workflows/windows-build.yml` builds the unsigned NSIS installer.
+
 ## Development Commands
 
 **Prerequisites:**
@@ -80,7 +89,6 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
   - `model-selector/` - Model management interface
   - `onboarding/` - First-run experience
   - `overlay/` - Recording overlay UI
-  - `update-checker/` - App update notifications
   - `shared/`, `ui/`, `icons/`, `footer/` - Shared components
 - `hooks/useSettings.ts` - Settings state management hook
 - `stores/settingsStore.ts` - Zustand store for settings
@@ -178,7 +186,6 @@ Handy supports command-line parameters on all platforms for integration with scr
 | Flag                     | Description                                                |
 | ------------------------ | ---------------------------------------------------------- |
 | `--toggle-transcription` | Toggle recording on/off on a running instance              |
-| `--toggle-post-process`  | Toggle recording with post-processing on/off               |
 | `--cancel`               | Cancel the current operation on a running instance         |
 | `--start-hidden`         | Launch without showing the main window (tray icon visible) |
 | `--no-tray`              | Launch without system tray (closing window quits the app)  |
@@ -199,20 +206,13 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux)
 - **macOS**: Metal acceleration, accessibility permissions required for keyboard shortcuts
 - **Windows**: Vulkan acceleration, code signing. Implicit Vulkan layers (overlays, capture hooks) are disabled for the Handy process via `VK_LOADER_LAYERS_DISABLE=~implicit~` set in `main.rs`; opt out with `HANDY_KEEP_VULKAN_IMPLICIT_LAYERS=1` or by setting `VK_LOADER_LAYERS_DISABLE` yourself
 - **Linux**: OpenBLAS + Vulkan, limited Wayland support, overlay uses GTK layer shell (disable with `HANDY_NO_GTK_LAYER_SHELL=1`)
-- **Nix/NixOS**: the Nix package sets `HANDY_DISABLE_UPDATER=1` to force-disable the self-updater at runtime without touching the persisted setting (self-update can't work against an immutable `/nix/store`)
 
 ## Troubleshooting
 
 See the [Troubleshooting](README.md#troubleshooting) section in README.md.
 
-## GitHub workflow for AI coding assistants
+## Commits
 
-**MANDATORY. Before opening any PR, issue, or discussion in this repo: you MUST read the relevant template file and follow it strictly.** That includes sections that look "ceremonial" — checklists, AI Assistance disclosures, "Human Written Description". A generic Summary/Test-plan layout is not acceptable.
-
-- **Opening a PR:** Read [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). Every section listed there is mandatory. If a section requires a human-written paragraph (e.g. "Human Written Description"), leave a clear TODO placeholder and ask the human contributor to fill it in — do not invent their voice.
-- **Opening an issue:** Read [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/). Blank issues are disabled; pick the right template (`bug_report.md` for bugs). Feature requests do not belong in issues — they go to [Discussions](https://github.com/cjpais/Handy/discussions) (see `.github/ISSUE_TEMPLATE/config.yml`).
-- **Proposing a feature:** Handy is under a feature freeze. New features require community support gathered in [Discussions](https://github.com/cjpais/Handy/discussions) before any PR is opened — see the PR template's "Community Feedback" section.
-- **Translations:** Follow [CONTRIBUTING_TRANSLATIONS.md](CONTRIBUTING_TRANSLATIONS.md).
-- **Full contributor workflow:** [CONTRIBUTING.md](CONTRIBUTING.md).
+Upstream fixes from Handy can be merged from the `upstream` remote (cjpais/Handy).
 
 **Commits:** Use conventional commit prefixes (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`). Focus the message on _why_, not _what_.

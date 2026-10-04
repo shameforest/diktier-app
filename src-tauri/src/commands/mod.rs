@@ -3,9 +3,7 @@ pub mod history;
 pub mod models;
 pub mod transcription;
 
-use crate::settings::{
-    get_settings, update_checks_forced_disabled, write_settings, AppSettings, LogLevel,
-};
+use crate::settings::{get_settings, write_settings, AppSettings, LogLevel};
 use crate::utils::cancel_current_operation;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
@@ -20,12 +18,6 @@ pub fn cancel_operation(app: AppHandle) {
 #[specta::specta]
 pub fn is_portable() -> bool {
     crate::portable::is_portable()
-}
-
-#[tauri::command]
-#[specta::specta]
-pub fn is_update_checks_locked() -> bool {
-    update_checks_forced_disabled()
 }
 
 #[tauri::command]
@@ -118,21 +110,6 @@ pub fn open_app_data_dir(app: AppHandle) -> Result<(), String> {
         .map_err(|e| format!("Failed to open app data directory: {}", e))?;
 
     Ok(())
-}
-
-/// Check if Apple Intelligence is available on this device.
-/// Called by the frontend when the user selects Apple Intelligence provider.
-#[specta::specta]
-#[tauri::command]
-pub fn check_apple_intelligence_available() -> bool {
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    {
-        crate::apple_intelligence::check_apple_intelligence_availability()
-    }
-    #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-    {
-        false
-    }
 }
 
 /// Try to initialize Enigo (keyboard/mouse simulation).

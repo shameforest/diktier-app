@@ -12,6 +12,18 @@ pub use crate::clipboard::*;
 pub use crate::overlay::*;
 pub use crate::tray::*;
 
+/// WebView2 runs Chromium/Edge background services (SmartScreen, config fetches,
+/// DNS-over-HTTPS probing, telemetry) that open outbound connections on their
+/// own. The UI is served locally and model downloads run in Rust, so the webview
+/// never needs the network: every hostname except localhost resolves to
+/// "not found". Keeps Tauri's default disabled features. All webviews of the
+/// process share one WebView2 environment, so every window must use these args.
+#[cfg(target_os = "windows")]
+pub const WEBVIEW_BROWSER_ARGS: &str =
+    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
+     --disable-background-networking --disable-component-update --disable-domain-reliability \
+     --host-resolver-rules=\"MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE *.localhost\"";
+
 /// Preserve diagnostic text in development builds, but redact it in releases.
 /// Do not use for secrets such as API keys, which must always be redacted.
 pub fn redact_text(text: &str) -> &str {

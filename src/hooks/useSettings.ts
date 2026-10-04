@@ -10,8 +10,6 @@ interface UseSettingsReturn {
   audioDevices: AudioDevice[];
   outputDevices: AudioDevice[];
   audioFeedbackEnabled: boolean;
-  postProcessModelOptions: Record<string, string[]>;
-  updateChecksLocked: boolean | null;
 
   // Actions
   updateSetting: <K extends keyof Settings>(
@@ -29,19 +27,6 @@ interface UseSettingsReturn {
 
   // Convenience getters
   getSetting: <K extends keyof Settings>(key: K) => Settings[K] | undefined;
-
-  // Post-processing helpers
-  setPostProcessProvider: (providerId: string) => Promise<void>;
-  updatePostProcessBaseUrl: (
-    providerId: string,
-    baseUrl: string,
-  ) => Promise<void>;
-  updatePostProcessApiKey: (
-    providerId: string,
-    apiKey: string,
-  ) => Promise<void>;
-  updatePostProcessModel: (providerId: string, model: string) => Promise<void>;
-  fetchPostProcessModels: (providerId: string) => Promise<string[]>;
 }
 
 export const useSettings = (): UseSettingsReturn => {
@@ -61,8 +46,6 @@ export const useSettings = (): UseSettingsReturn => {
     audioDevices: store.audioDevices,
     outputDevices: store.outputDevices,
     audioFeedbackEnabled: store.settings?.audio_feedback || false,
-    postProcessModelOptions: store.postProcessModelOptions,
-    updateChecksLocked: store.updateChecksLocked,
     updateSetting: store.updateSetting,
     resetSetting: store.resetSetting,
     refreshSettings: store.refreshSettings,
@@ -71,10 +54,5 @@ export const useSettings = (): UseSettingsReturn => {
     updateBinding: store.updateBinding,
     resetBinding: store.resetBinding,
     getSetting: store.getSetting,
-    setPostProcessProvider: store.setPostProcessProvider,
-    updatePostProcessBaseUrl: store.updatePostProcessBaseUrl,
-    updatePostProcessApiKey: store.updatePostProcessApiKey,
-    updatePostProcessModel: store.updatePostProcessModel,
-    fetchPostProcessModels: store.fetchPostProcessModels,
   };
 };

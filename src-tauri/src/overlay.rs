@@ -426,6 +426,11 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
         builder = builder.data_directory(data_dir.join("webview"));
     }
 
+    #[cfg(target_os = "windows")]
+    {
+        builder = builder.additional_browser_args(crate::utils::WEBVIEW_BROWSER_ARGS);
+    }
+
     #[allow(unused_variables)]
     match builder.build() {
         Ok(window) => {
@@ -623,11 +628,6 @@ pub fn show_streaming_overlay(app_handle: &AppHandle) {
 /// Shows the transcribing overlay window
 pub fn show_transcribing_overlay(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "transcribing");
-}
-
-/// Shows the processing overlay window
-pub fn show_processing_overlay(app_handle: &AppHandle) {
-    show_overlay_state(app_handle, "processing");
 }
 
 /// Updates the overlay window position based on current settings
